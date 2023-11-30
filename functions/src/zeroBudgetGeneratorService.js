@@ -105,6 +105,9 @@ const zeroBudgetGeneratorService = functions.https.onCall(
           len: "0",
           color: generateRandomHexColor(),
           createdAt: new Date().toISOString(),
+          carryOverBudgetToSpend: "0",
+          carryOverAmountLeft: "0",
+          carryOverAmountSpent: "0",
         };
       });
 

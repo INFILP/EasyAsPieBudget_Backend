@@ -35,14 +35,14 @@ const zeroBudgetGeneratorService = async (data, context) => {
       budgetMode: type,
       budgetType: "zero_based",
       budget: {
-        budgetToSpend: 0,
-        totalLeft: 0,
+        budgetToSpend: "0",
+        totalLeft: "0",
         budgetStartDate: currentDate,
         budgetEndDate: endDate,
         spendingDuration: "month",
         budgetMonth: currentDate.getMonth() + 1,
         budgetYear: currentDate.getFullYear(),
-        carryOver: 0,
+        carryOver: "0",
       },
       categories: {},
       members: [],
@@ -89,10 +89,16 @@ const zeroBudgetGeneratorService = async (data, context) => {
 
     Object.keys(user.data().categories).forEach((key) => {
       categories[key] = {
+        id: key,
         name: user.data().categories[key],
-        amountSpent: 0,
-        amountLeft: 0,
-        len: 0,
+        amountSpent: "0",
+        amountLeft: "0",
+        len: "0",
+        color: generateRandomHexColor(),
+        createdAt: new Date().toISOString(),
+        carryOverBudgetToSpend: "0",
+        carryOverAmountLeft: "0",
+        carryOverAmountSpent: "0",
       };
     });
 
@@ -120,7 +126,9 @@ const zeroBudgetGeneratorService = async (data, context) => {
       if (categories[key].len) {
         const amountLeft = parseFloat(
           categories[key].amountLeft / categories[key].len
-        ).toFixed(2);
+        )
+          .toFixed(2)
+          .toString();
         categories[key] = {
           name: categories[key].name,
           amountSpent: parseFloat(categories[key].amountSpent).toFixed(2),

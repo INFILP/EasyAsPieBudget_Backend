@@ -76,31 +76,36 @@ const generateMonthlyZeroBudget = async () => {
       const docData = doc.data();
 
       // if a category does not have auto adjust we need to move it to carry over so user and manually adjust is
-      const categoriesTotalCarryOverWithNoAuthAdjust = Object.values(
-        docData.categories
-      )
+      let categoriesTotalCarryOverWithNoAuthAdjust = 0;
+      Object.values(docData.categories)
         .filter((category) => !category?.autoAdjust)
         .map((category) =>
           category?.amountLeft ? parseFloat(category.amountLeft) : 0
         )
-        .reduce((partialSum, a) => parseFloat(partialSum) + parseFloat(a), 0);
+        .forEach(
+          (category) => (categoriesTotalCarryOverWithNoAuthAdjust += category)
+        );
 
-      //   console.log(categoriesTotalCarryOverWithNoAuthAdjust);
+      // console.log(categoriesTotalCarryOverWithNoAuthAdjust);
 
       let categories = {};
 
       Object.values(docData.categories).forEach((category) => {
+        const carryOver = category?.carryOverAmountLeft
+          ? (
+              parseFloat(category?.carryOverAmountLeft) +
+              parseFloat(category.amountLeft)
+            ).toString()
+          : category.amountLeft?.toString();
+
         if (category?.autoAdjust) {
           categories[category.id] = {
             ...category,
             amountSpent: "0",
             amountLeft: category.budgetToSpend.toString(),
-            carryOver: category?.carryOver
-              ? (
-                  parseFloat(category?.carryOver) +
-                  parseFloat(category.amountLeft)
-                ).toString()
-              : category.amountLeft?.toString(),
+            carryOverBudgetToSpend: carryOver,
+            carryOverAmountLeft: carryOver,
+            carryOverAmountSpent: "0",
             createdAt: new Date().toISOString(),
           };
         } else {
@@ -108,9 +113,9 @@ const generateMonthlyZeroBudget = async () => {
             ...category,
             amountSpent: "0",
             amountLeft: category.budgetToSpend.toString(),
-            carryOver: category?.carryOver
-              ? category?.carryOver?.toString()
-              : "0",
+            carryOverBudgetToSpend: "0",
+            carryOverAmountLeft: "0",
+            carryOverAmountSpent: "0",
             createdAt: new Date().toISOString(),
           };
         }
@@ -130,7 +135,10 @@ const generateMonthlyZeroBudget = async () => {
           budgetMonth: (nextBugetDate.getMonth() + 1).toString(),
           spendingDuration: "month",
           budgetYear: nextBugetDate.getFullYear().toString(),
-          carryOver: categoriesTotalCarryOverWithNoAuthAdjust.toString(),
+          carryOver: (
+            categoriesTotalCarryOverWithNoAuthAdjust +
+            parseFloat(docData.budget.totalLeft)
+          ).toString(),
           budgetEndDate: nextBugetDate,
           budgetStartDate: nextBugetDate,
         },
@@ -164,7 +172,7 @@ const recurringPaymentsService = functions.pubsub
   .schedule("every 24 hours")
   .onRun(async (context) => {
     try {
-      const isItFirstOfMonth = new Date(2023, 11, 1).getDate() === 1;
+      const isItFirstOfMonth = new Date().getDate() === 1;
       let monthlyBudgets = [];
 
       if (isItFirstOfMonth) {
@@ -175,7 +183,7 @@ const recurringPaymentsService = functions.pubsub
       // Recurring payments will be done in both case but if its
       // 1st must add budgets before
 
-      const paymentDeductionDate = new Date(2023, 11, 1);
+      const paymentDeductionDate = new Date();
       // paymentDeductionDate = new Date(
       //   paymentDeductionDate.setDate(paymentDeductionDate.getDate() + 30)
       // );

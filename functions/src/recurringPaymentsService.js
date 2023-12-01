@@ -27,17 +27,21 @@ const getNextMonthDate = (date) => {
 const generateMonthlyZeroBudget = async () => {
   try {
     let currentDate = new Date();
-    let pastBudgetDate = new Date(
-      `${
-        currentDate.getMonth() + 1
-      }/1/${currentDate.getFullYear()}, 00:00:00 AM UTC`
-    );
-    let nextBugetDate = new Date(
-      `${
-        currentDate.getMonth() + 2
-      }/1/${currentDate.getFullYear()}, 00:00:00 AM UTC`
-    );
+    currentDate.setHours(0, 0, 0, 0);
 
+    let pastBudgetDate = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth() + 1,
+      1
+    );
+    pastBudgetDate.setHours(0, 0, 0, 0);
+
+    let nextBugetDate = new Date(
+      currentDate.getFullYear(),
+      currentDate.getMonth() + 2,
+      1
+    );
+    nextBugetDate.setHours(0, 0, 0, 0);
     // Start of the day
     const startOfDay = new Date(currentDate);
     startOfDay.setHours(0, 0, 0, 0);

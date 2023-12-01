@@ -51,16 +51,21 @@ const getNextMonthDate = (date) => {
 const generateMonthlyZeroBudget = async () => {
   try {
     let currentDate = new Date();
+    currentDate.setHours(0, 0, 0, 0);
+
     let pastBudgetDate = new Date(
-      `${
-        currentDate.getMonth() + 1
-      }/1/${currentDate.getFullYear()}, 00:00:00 AM UTC`
+      currentDate.getFullYear(),
+      currentDate.getMonth() + 1,
+      1
     );
+    pastBudgetDate.setHours(0, 0, 0, 0);
+
     let nextBugetDate = new Date(
-      `${
-        currentDate.getMonth() + 2
-      }/1/${currentDate.getFullYear()}, 00:00:00 AM UTC`
+      currentDate.getFullYear(),
+      currentDate.getMonth() + 2,
+      1
     );
+    nextBugetDate.setHours(0, 0, 0, 0);
 
     // Start of the day
     const startOfDay = new Date(currentDate);
@@ -171,7 +176,7 @@ const generateMonthlyZeroBudget = async () => {
       });
     }
 
-    // console.dir(lastZeroBasedBudgetsData);
+    console.dir(lastZeroBasedBudgetsData);
 
     const newBudgetPromises = lastZeroBasedBudgetsData.map(async (budget) => {
       console.log(`Adding budget: ${budget.id}`);
@@ -194,7 +199,8 @@ const generateMonthlyZeroBudget = async () => {
 
 const recurringPaymentsService = async (context) => {
   try {
-    const isItFirstOfMonth = new Date(2023, 11, 1).getDate() === 1;
+    const isItFirstOfMonth = new Date().getDate() === 1;
+    // 2023, 12, 1
     let monthlyBudgets = [];
 
     if (isItFirstOfMonth) {
@@ -205,7 +211,8 @@ const recurringPaymentsService = async (context) => {
     // Recurring payments will be done in both case but if its
     // 1st must add budgets before
 
-    const paymentDeductionDate = new Date(2023, 11, 1);
+    const paymentDeductionDate = new Date();
+    // 2023, 12, 1
     // paymentDeductionDate = new Date(
     //   paymentDeductionDate.setDate(paymentDeductionDate.getDate() + 30)
     // );

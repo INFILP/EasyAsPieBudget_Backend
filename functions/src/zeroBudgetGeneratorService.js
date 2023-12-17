@@ -63,9 +63,11 @@ const zeroBudgetGeneratorService = functions.https.onCall(
 
       for (let i = duration; i > 0; i--) {
         bugdetIds.push(
-          `${type == "personal" ? data.uid : data.groupId}_${
-            currentDate.getMonth() + 2 - i
-          }_${currentDate.getFullYear()}_${type}_traditional`
+          //! OLD ID
+          // `${type == "personal" ? data.uid : data.groupId}_${
+          //   currentDate.getMonth() + 2 - i
+          // }_${currentDate.getFullYear()}_${type}_traditional`
+          `${type == "personal" ? data.uid : data.groupId}_${type}_traditional`
         );
       }
 

@@ -1,37 +1,37 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 
-const plansAccess = {
-  // Disabled from stores
-  eap_199_1m_1m199: {
-    isGroupAdmin: false,
-    isPlanActive: true,
-  },
-  eap_799_1m_1m799: {
-    isGroupAdmin: true,
-    isPlanActive: true,
-  },
+// const plansAccess = {
+//   // Disabled from stores
+//   eap_199_1m_1m199: {
+//     isGroupAdmin: false,
+//     isPlanActive: true,
+//   },
+//   eap_799_1m_1m799: {
+//     isGroupAdmin: true,
+//     isPlanActive: true,
+//   },
 
-  // Pro Version
-  eap_599_1m_1m599: {
-    isGroupAdmin: false,
-    isPlanActive: true,
-  },
-  "eap_599_1y_1y599:eap-599-1y-1y599": {
-    isGroupAdmin: false,
-    isPlanActive: true,
-  },
+//   // Pro Version
+//   eap_599_1m_1m599: {
+//     isGroupAdmin: false,
+//     isPlanActive: true,
+//   },
+//   "eap_599_1y_1y599:eap-599-1y-1y599": {
+//     isGroupAdmin: false,
+//     isPlanActive: true,
+//   },
 
-  // Family Version
-  eap_999_1m_1m999: {
-    isGroupAdmin: true,
-    isPlanActive: true,
-  },
-  "eap_999_1y_1y999:eap-999-1y-1y999": {
-    isGroupAdmin: true,
-    isPlanActive: true,
-  },
-};
+//   // Family Version
+//   eap_999_1m_1m999: {
+//     isGroupAdmin: true,
+//     isPlanActive: true,
+//   },
+//   "eap_999_1y_1y999:eap-999-1y-1y999": {
+//     isGroupAdmin: true,
+//     isPlanActive: true,
+//   },
+// };
 
 let groupData = {
   authorId: "",
@@ -45,17 +45,15 @@ const SubscriptionEventWatcher = functions.firestore
   .onCreate(async (snap, context) => {
     // Get an object representing the document
     const data = snap.data();
-
     console.log(data);
+
     if (data.type === "CANCELLATION") {
       console.log(
-        "User: " +
-          data.app_user_id +
-          " canceling subscription to " +
-          data.product_id +
-          "from " +
-          data.store
+        `User: ${data.app_user_id} canceling subscription to ${
+          data.product_id
+        } from ${data.store} at ${new Date().toISOString()}`
       );
+
       let groupData = await admin
         .firestore()
         .collection("familyGroups")
@@ -67,14 +65,20 @@ const SubscriptionEventWatcher = functions.firestore
       let groupMembers = groupData.members;
       let updateMembersPlanPromiseArray = [];
 
-      //! there may a check required to set isGroupAdmin true
-      //! for those who have family subscription plan and was
-      //! part of this group
+      // Setting the member group id back to original and role back to admin
+      // This way if they have their plan active it will not affect them
       updateMembersPlanPromiseArray = Object.keys(groupMembers).map(
         (memberId) =>
-          admin.firestore().collection("users").doc(memberId).update({
-            isGroupMember: false,
-          })
+          admin
+            .firestore()
+            .collection("users")
+            .doc(memberId)
+            .update({
+              group: {
+                id: memberId,
+                role: "admin",
+              },
+            })
       );
 
       await Promise.all(updateMembersPlanPromiseArray);
@@ -99,53 +103,60 @@ const SubscriptionEventWatcher = functions.firestore
         .collection("users")
         .doc(data.app_user_id)
         .update({
-          isPlanActive: false,
-          isGroupMember: false,
-          isGroupAdmin: false,
-          plan: "free",
+          group: {
+            id: data.app_user_id,
+            role: "admin",
+          },
+          ["plan.active"]: false,
+          ["plan.name"]: "free",
+          ["plan.endAt"]: new Date(),
         });
     } else if (data.type == "INITIAL_PURCHASE") {
       console.log(
-        "User: " +
-          data.app_user_id +
-          " subscribing to " +
-          data.product_id +
-          " from " +
+        `User: ${data.app_user_id} subscribing to ${data.product_id} from ${
           data.store
+        } at ${new Date().toISOString()}`
       );
 
-      // if it is Pro Version
+      // if it is solo Version
       if (
         data.product_id == "eap_599_1m_1m599" ||
         data.product_id == "eap_599_1y_1y599:eap-599-1y-1y599"
       ) {
-        console.log("Product is Pro Version");
+        console.log("Product is Solo Version");
         return await admin
           .firestore()
           .collection("users")
           .doc(data.app_user_id)
           .update({
-            isGroupAdmin: plansAccess[data.product_id].isGroupAdmin,
-            isPlanActive: plansAccess[data.product_id].isPlanActive,
-            plan: data.product_id,
-            joinedGroupId: data.app_user_id,
+            group: {
+              id: data.app_user_id,
+              role: "admin",
+            },
+            ["plan.active"]: true,
+            ["plan.name"]: data.product_id,
+            ["plan.startedAt"]: new Date(),
           });
       }
 
-      //  if it is family version
+      //  if it is group version
       else if (
         data.product_id == "eap_999_1m_1m999" ||
         data.product_id == "eap_999_1y_1y999:eap-999-1y-1y999"
       ) {
-        console.log("Product is Family Version");
+        console.log("Product is Group Version");
         await admin
           .firestore()
           .collection("users")
           .doc(data.app_user_id)
           .update({
-            isGroupAdmin: plansAccess[data.product_id].isGroupAdmin,
-            isPlanActive: plansAccess[data.product_id].isPlanActive,
-            plan: data.product_id,
+            group: {
+              id: data.app_user_id,
+              role: "admin",
+            },
+            ["plan.active"]: true,
+            ["plan.name"]: data.product_id,
+            ["plan.startedAt"]: new Date(),
           });
 
         let userData = await admin.auth().getUser(data.app_user_id);
@@ -167,12 +178,9 @@ const SubscriptionEventWatcher = functions.firestore
     else if (data.type == "TRANSFER") {
     } else if (data.type == "RENEWAL") {
       console.log(
-        "User: " +
-          data.app_user_id +
-          " renewel to " +
-          data.product_id +
-          " from " +
-          data.store
+        `User: ${data.app_user_id} renewel subscription to ${
+          data.product_id
+        } from ${data.store} at ${new Date().toISOString()}`
       );
 
       return await admin
@@ -180,29 +188,25 @@ const SubscriptionEventWatcher = functions.firestore
         .collection("users")
         .doc(data.app_user_id)
         .update({
-          isGroupAdmin: plansAccess[data.product_id].isGroupAdmin,
-          isPlanActive: plansAccess[data.product_id].isPlanActive,
-          plan: data.product_id,
+          group: {
+            id: data.app_user_id,
+            role: "admin",
+          },
+          ["plan.active"]: true,
+          ["plan.name"]: data.product_id,
+          ["plan.startedAt"]: new Date(),
         });
     } else if (data.type == "EXPIRATION") {
       return console.log(
-        "User: " +
-          data.app_user_id +
-          " expiration to " +
-          data.product_id +
-          " from " +
-          data.store
+        `User: ${data.app_user_id} expiration subscription to ${
+          data.product_id
+        } from ${data.store} at ${new Date().toISOString()}`
       );
     } else {
       return console.log(
-        "User: " +
-          data.app_user_id +
-          +" " +
-          data.type +
-          " to " +
-          data.product_id +
-          " from " +
+        `User: ${data.app_user_id} ${data.type} to ${data.product_id} from ${
           data.store
+        } at ${new Date().toISOString()}`
       );
     }
   });

@@ -1,6 +1,6 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-
+const fetch = require("node-fetch");
 // const plansAccess = {
 //   // Disabled from stores
 //   eap_199_1m_1m199: {
@@ -60,28 +60,30 @@ const SubscriptionEventWatcher = functions.firestore
         .doc(data.app_user_id)
         .get();
 
-      groupData = groupData.data();
+      groupData = groupData.data() ?? {};
 
-      let groupMembers = groupData.members;
+      let groupMembers = groupData?.members;
       let updateMembersPlanPromiseArray = [];
 
-      // Setting the member group id back to original and role back to admin
-      // This way if they have their plan active it will not affect them
-      updateMembersPlanPromiseArray = Object.keys(groupMembers).map(
-        (memberId) =>
-          admin
-            .firestore()
-            .collection("users")
-            .doc(memberId)
-            .update({
-              group: {
-                id: memberId,
-                role: "admin",
-              },
-            })
-      );
+      if (groupMembers) {
+        // Setting the member group id back to original and role back to admin
+        // This way if they have their plan active it will not affect them
+        updateMembersPlanPromiseArray = Object.keys(groupMembers).map(
+          (memberId) =>
+            admin
+              .firestore()
+              .collection("users")
+              .doc(memberId)
+              .update({
+                group: {
+                  id: memberId,
+                  role: "admin",
+                },
+              })
+        );
 
-      await Promise.all(updateMembersPlanPromiseArray);
+        await Promise.all(updateMembersPlanPromiseArray);
+      }
 
       let userData = await admin.auth().getUser(data.app_user_id);
 
@@ -166,6 +168,24 @@ const SubscriptionEventWatcher = functions.firestore
           email: userData.email,
           name: userData.displayName,
         };
+
+        // const message = {
+        //   to: memberToRequestData.notificationToken,
+        //   sound: "default",
+        //   title: "Subscription Activation",
+        //   body: `Your subscription is now active!`,
+        //   data: { someData: "", path: "notificationscreen" },
+        // };
+
+        // await fetch("https://exp.host/--/api/v2/push/send", {
+        //   method: "POST",
+        //   headers: {
+        //     Accept: "application/json",
+        //     "Accept-encoding": "gzip, deflate",
+        //     "Content-Type": "application/json",
+        //   },
+        //   body: JSON.stringify(message),
+        // });
 
         return admin
           .firestore()

@@ -1,6 +1,8 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
+const helper = require("../utils/helper");
+
 // const plansAccess = {
 //   // Disabled from stores
 //   eap_199_1m_1m199: {
@@ -17,7 +19,7 @@ const fetch = require("node-fetch");
 //     isGroupAdmin: false,
 //     isPlanActive: true,
 //   },
-//   "eap_599_1y_1y599:eap-599-1y-1y599": {
+//   "eap_599_1y_1y599": {
 //     isGroupAdmin: false,
 //     isPlanActive: true,
 //   },
@@ -27,25 +29,25 @@ const fetch = require("node-fetch");
 //     isGroupAdmin: true,
 //     isPlanActive: true,
 //   },
-//   "eap_999_1y_1y999:eap-999-1y-1y999": {
+//   "eap_999_1y_1y999": {
 //     isGroupAdmin: true,
 //     isPlanActive: true,
 //   },
 // };
 
-let groupData = {
-  authorId: "",
-  members: {
-    // [uuid]: user.email,
-  },
-};
+// let groupData = {
+//   authorId: "",
+//   members: {
+//     // [uuid]: user.email,
+//   },
+// };
 
 const SubscriptionEventWatcher = functions.firestore
   .document("webhook/{userId}")
   .onCreate(async (snap, context) => {
     // Get an object representing the document
     const data = snap.data();
-    console.log(data);
+    // console.log(data);
 
     if (data.type === "CANCELLATION") {
       console.log(
@@ -60,12 +62,16 @@ const SubscriptionEventWatcher = functions.firestore
         .doc(data.app_user_id)
         .get();
 
-      groupData = groupData.data() ?? {};
+      if (groupData.exists()) groupData = groupData.data();
+      else
+        groupData = {
+          members: {},
+        };
 
-      let groupMembers = groupData?.members;
-      let updateMembersPlanPromiseArray = [];
-
-      if (groupMembers) {
+      // If there are members in the group
+      if (groupMembers?.members) {
+        let groupMembers = groupData?.members;
+        let updateMembersPlanPromiseArray = [];
         // Setting the member group id back to original and role back to admin
         // This way if they have their plan active it will not affect them
         updateMembersPlanPromiseArray = Object.keys(groupMembers).map(
@@ -85,12 +91,18 @@ const SubscriptionEventWatcher = functions.firestore
         await Promise.all(updateMembersPlanPromiseArray);
       }
 
-      let userData = await admin.auth().getUser(data.app_user_id);
+      let userData = await admin
+        .firestore()
+        .collection("users")
+        .doc(data.app_user_id)
+        .get();
+
+      userData = userData.data();
 
       groupData.members = {
         [`${data.app_user_id}`]: {
           email: userData.email,
-          name: userData.displayName,
+          name: userData.name,
         },
       };
 
@@ -99,6 +111,18 @@ const SubscriptionEventWatcher = functions.firestore
         .collection("familyGroups")
         .doc(data.app_user_id)
         .update(groupData);
+
+      if (userData.notificationToken) {
+        const message = {
+          to: userData.notificationToken,
+          sound: "default",
+          title: "Subscription Cancelled",
+          body: `Your subscription is cancelled!`,
+          data: { someData: "", path: "notificationscreen" },
+        };
+
+        await helper.sendNotificaion(message);
+      }
 
       return admin
         .firestore()
@@ -126,6 +150,7 @@ const SubscriptionEventWatcher = functions.firestore
         data.product_id == "eap_599_1y_1y599:eap-599-1y-1y599"
       ) {
         console.log("Product is Solo Version");
+
         return await admin
           .firestore()
           .collection("users")
@@ -147,6 +172,7 @@ const SubscriptionEventWatcher = functions.firestore
         data.product_id == "eap_999_1y_1y999:eap-999-1y-1y999"
       ) {
         console.log("Product is Group Version");
+
         await admin
           .firestore()
           .collection("users")
@@ -161,31 +187,36 @@ const SubscriptionEventWatcher = functions.firestore
             ["plan.startedAt"]: new Date(),
           });
 
-        let userData = await admin.auth().getUser(data.app_user_id);
+        // await admin.auth().getUser(data.app_user_id);
+        let userData = await admin
+          .firestore()
+          .collection("users")
+          .doc(data.app_user_id)
+          .get();
 
-        groupData.authorId = data.app_user_id;
-        groupData.members[`${data.app_user_id}`] = {
-          email: userData.email,
-          name: userData.displayName,
+        userData = userData.data();
+
+        let groupData = {
+          authorId: data.app_user_id,
+          members: {},
         };
 
-        // const message = {
-        //   to: memberToRequestData.notificationToken,
-        //   sound: "default",
-        //   title: "Subscription Activation",
-        //   body: `Your subscription is now active!`,
-        //   data: { someData: "", path: "notificationscreen" },
-        // };
+        groupData.members[`${data.app_user_id}`] = {
+          email: userData.email,
+          name: userData.name,
+        };
 
-        // await fetch("https://exp.host/--/api/v2/push/send", {
-        //   method: "POST",
-        //   headers: {
-        //     Accept: "application/json",
-        //     "Accept-encoding": "gzip, deflate",
-        //     "Content-Type": "application/json",
-        //   },
-        //   body: JSON.stringify(message),
-        // });
+        if (userData.notificationToken) {
+          const message = {
+            to: userData.notificationToken,
+            sound: "default",
+            title: "Subscription Activation",
+            body: `Your subscription is now active!`,
+            data: { someData: "", path: "notificationscreen" },
+          };
+
+          await helper.sendNotificaion(message);
+        }
 
         return admin
           .firestore()
@@ -193,9 +224,8 @@ const SubscriptionEventWatcher = functions.firestore
           .doc(data.app_user_id)
           .set(groupData);
       }
-    }
-    // for iOS initial purchase
-    else if (data.type == "TRANSFER") {
+    } else if (data.type == "TRANSFER") {
+      // for iOS initial purchase
     } else if (data.type == "RENEWAL") {
       console.log(
         `User: ${data.app_user_id} renewel subscription to ${

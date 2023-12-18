@@ -1,7 +1,6 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const fetch = require("node-fetch");
-const { log } = require("firebase-functions/logger");
 
 const getNextMonthDate = (date) => {
   const currentDate = new Date(date);

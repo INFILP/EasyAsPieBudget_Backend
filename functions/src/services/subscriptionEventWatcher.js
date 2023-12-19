@@ -3,44 +3,55 @@ const admin = require("firebase-admin");
 const fetch = require("node-fetch");
 const helper = require("../utils/helper");
 
-// const plansAccess = {
-//   // Disabled from stores
-//   eap_199_1m_1m199: {
-//     isGroupAdmin: false,
-//     isPlanActive: true,
-//   },
-//   eap_799_1m_1m799: {
-//     isGroupAdmin: true,
-//     isPlanActive: true,
-//   },
+const subscriptionPlans = {
+  // Disabled from stores
+  eap_199_1m_1m199: {
+    id: "eap_199_1m_1m199",
+    name: "",
+  },
+  eap_799_1m_1m799: {
+    id: "eap_799_1m_1m799",
+    name: "",
+  },
 
-//   // Pro Version
-//   eap_599_1m_1m599: {
-//     isGroupAdmin: false,
-//     isPlanActive: true,
-//   },
-//   "eap_599_1y_1y599": {
-//     isGroupAdmin: false,
-//     isPlanActive: true,
-//   },
+  // Pro Version
+  eap_599_1m_1m599: {
+    id: "eap_599_1m_1m599",
+    name: "Solo Gold",
+    product_id: "eap_599_1m_1m599",
+  },
+  // iOS Product ID
+  eap_599_1y_1y599: {
+    id: "eap_599_1y_1y599",
+    name: "Solo Premium",
+    product_id: "eap_599_1y_1y599",
+  },
+  // Android Product ID
+  "eap_599_1y_1y599:eap-599-1y-1y599": {
+    id: "eap_599_1y_1y599",
+    name: "Solo Premium",
+    product_id: "eap_599_1y_1y599:eap-599-1y-1y599",
+  },
 
-//   // Family Version
-//   eap_999_1m_1m999: {
-//     isGroupAdmin: true,
-//     isPlanActive: true,
-//   },
-//   "eap_999_1y_1y999": {
-//     isGroupAdmin: true,
-//     isPlanActive: true,
-//   },
-// };
-
-// let groupData = {
-//   authorId: "",
-//   members: {
-//     // [uuid]: user.email,
-//   },
-// };
+  // Family Version
+  eap_999_1m_1m999: {
+    id: "eap_999_1m_1m999",
+    name: "Group Gold",
+    product_id: "eap_999_1m_1m999",
+  },
+  // iOS Product ID
+  eap_999_1y_1y999: {
+    id: "eap_999_1y_1y999",
+    name: "Group Premium",
+    product_id: "eap_999_1y_1y999",
+  },
+  // Android Product ID
+  "eap_999_1y_1y999:eap-999-1y-1y999": {
+    id: "eap_999_1y_1y999",
+    name: "Group Premium",
+    product_id: "eap_999_1y_1y999:eap-999-1y-1y999",
+  },
+};
 
 const SubscriptionEventWatcher = functions.firestore
   .document("webhook/{userId}")
@@ -49,11 +60,14 @@ const SubscriptionEventWatcher = functions.firestore
     const data = snap.data();
     // console.log(data);
 
-    if (data.type === "CANCELLATION") {
+    // This is user for varius cases also cancellation by user
+    if (data.type === "EXPIRATION") {
       console.log(
-        `User: ${data.app_user_id} canceling subscription to ${
+        `User: ${data.app_user_id} subscription to ${
           data.product_id
-        } from ${data.store} at ${new Date().toISOString()}`
+        } expired due do ${data.e}from ${
+          data.store
+        } at ${new Date().toISOString()}`
       );
 
       let groupData = await admin
@@ -62,30 +76,32 @@ const SubscriptionEventWatcher = functions.firestore
         .doc(data.app_user_id)
         .get();
 
-      if (groupData.exists()) groupData = groupData.data();
+      if (groupData.exists) groupData = groupData.data();
       else
         groupData = {
           members: {},
         };
 
       // If there are members in the group
-      if (groupMembers?.members) {
-        let groupMembers = groupData?.members;
+      if (groupData?.members && Object.keys(groupData?.members).length > 0) {
+        let groupMembers = Object.keys(groupData?.members);
         let updateMembersPlanPromiseArray = [];
+
+        groupMembers = groupMembers.filter((uid) => uid != data.app_user_id);
+
         // Setting the member group id back to original and role back to admin
         // This way if they have their plan active it will not affect them
-        updateMembersPlanPromiseArray = Object.keys(groupMembers).map(
-          (memberId) =>
-            admin
-              .firestore()
-              .collection("users")
-              .doc(memberId)
-              .update({
-                group: {
-                  id: memberId,
-                  role: "admin",
-                },
-              })
+        updateMembersPlanPromiseArray = groupMembers.map((memberId) =>
+          admin
+            .firestore()
+            .collection("users")
+            .doc(memberId)
+            .update({
+              group: {
+                id: memberId,
+                role: "admin",
+              },
+            })
         );
 
         await Promise.all(updateMembersPlanPromiseArray);
@@ -112,19 +128,7 @@ const SubscriptionEventWatcher = functions.firestore
         .doc(data.app_user_id)
         .update(groupData);
 
-      if (userData.notificationToken) {
-        const message = {
-          to: userData.notificationToken,
-          sound: "default",
-          title: "Subscription Cancelled",
-          body: `Your subscription is cancelled!`,
-          data: { someData: "", path: "notificationscreen" },
-        };
-
-        await helper.sendNotificaion(message);
-      }
-
-      return admin
+      await admin
         .firestore()
         .collection("users")
         .doc(data.app_user_id)
@@ -137,7 +141,49 @@ const SubscriptionEventWatcher = functions.firestore
           ["plan.name"]: "free",
           ["plan.endAt"]: new Date(),
         });
-    } else if (data.type == "INITIAL_PURCHASE") {
+
+      if (userData.notificationToken) {
+        let body = "";
+
+        switch (data.expiration_reason) {
+          case "UNSUBSCRIBE":
+            body = `Your ${
+              subscriptionPlans[data.product_id].name
+            } subscription is cancelled!`;
+            break;
+          case "BILLING_ERROR":
+            body = `Your ${
+              subscriptionPlans[data.product_id].name
+            } subscription is not activated due to some billing error! Any amount taken from you will be refunded by the store`;
+            break;
+          case "SUBSCRIPTION_PAUSED":
+            body = `Your ${
+              subscriptionPlans[data.product_id].name
+            } subscription is cancelled as you have paused the subscription`;
+            break;
+          case "UNKNOWN":
+            body = `Your ${
+              subscriptionPlans[data.product_id].name
+            } subscription is not de-activated due to some error! Any amount taken from you will be refunded by the store`;
+            break;
+        }
+
+        const message = {
+          to: userData.notificationToken,
+          sound: "default",
+          title: "Subscription Cancelled",
+          body: body,
+          data: { someData: "", path: "notificationscreen" },
+        };
+
+        await helper.sendNotificaion(message);
+      }
+
+      return;
+    } else if (
+      data.type == "INITIAL_PURCHASE" ||
+      data.type == "UNCANCELLATION"
+    ) {
       console.log(
         `User: ${data.app_user_id} subscribing to ${data.product_id} from ${
           data.store
@@ -146,8 +192,9 @@ const SubscriptionEventWatcher = functions.firestore
 
       // if it is solo Version
       if (
-        data.product_id == "eap_599_1m_1m599" ||
-        data.product_id == "eap_599_1y_1y599:eap-599-1y-1y599"
+        data.product_id == subscriptionPlans["eap_599_1m_1m599"].product_id ||
+        data.product_id ==
+          subscriptionPlans["eap_599_1y_1y599:eap-599-1y-1y599"].product_id
       ) {
         console.log("Product is Solo Version");
 
@@ -161,15 +208,16 @@ const SubscriptionEventWatcher = functions.firestore
               role: "admin",
             },
             ["plan.active"]: true,
-            ["plan.name"]: data.product_id,
+            ["plan.name"]: subscriptionPlans[data.product_id].id,
             ["plan.startedAt"]: new Date(),
           });
       }
 
       //  if it is group version
       else if (
-        data.product_id == "eap_999_1m_1m999" ||
-        data.product_id == "eap_999_1y_1y999:eap-999-1y-1y999"
+        data.product_id == subscriptionPlans["eap_999_1m_1m999"].product_id ||
+        data.product_id ==
+          subscriptionPlans["eap_999_1y_1y999:eap-999-1y-1y999"].product_id
       ) {
         console.log("Product is Group Version");
 
@@ -183,7 +231,7 @@ const SubscriptionEventWatcher = functions.firestore
               role: "admin",
             },
             ["plan.active"]: true,
-            ["plan.name"]: data.product_id,
+            ["plan.name"]: subscriptionPlans[data.product_id].id,
             ["plan.startedAt"]: new Date(),
           });
 
@@ -206,26 +254,28 @@ const SubscriptionEventWatcher = functions.firestore
           name: userData.name,
         };
 
+        await admin
+          .firestore()
+          .collection("familyGroups")
+          .doc(data.app_user_id)
+          .set(groupData);
+
         if (userData.notificationToken) {
           const message = {
             to: userData.notificationToken,
             sound: "default",
             title: "Subscription Activation",
-            body: `Your subscription is now active!`,
+            body: `Your ${
+              subscriptionPlans[data.product_id].name
+            } subscription is now active!`,
             data: { someData: "", path: "notificationscreen" },
           };
 
           await helper.sendNotificaion(message);
         }
 
-        return admin
-          .firestore()
-          .collection("familyGroups")
-          .doc(data.app_user_id)
-          .set(groupData);
+        return;
       }
-    } else if (data.type == "TRANSFER") {
-      // for iOS initial purchase
     } else if (data.type == "RENEWAL") {
       console.log(
         `User: ${data.app_user_id} renewel subscription to ${
@@ -233,7 +283,21 @@ const SubscriptionEventWatcher = functions.firestore
         } from ${data.store} at ${new Date().toISOString()}`
       );
 
-      return await admin
+      let userData = await admin
+        .firestore()
+        .collection("users")
+        .doc(data.app_user_id)
+        .get();
+
+      userData = userData.data();
+
+      await admin
+        .firestore()
+        .collection("familyGroups")
+        .doc(data.app_user_id)
+        .update(groupData);
+
+      await admin
         .firestore()
         .collection("users")
         .doc(data.app_user_id)
@@ -243,15 +307,25 @@ const SubscriptionEventWatcher = functions.firestore
             role: "admin",
           },
           ["plan.active"]: true,
-          ["plan.name"]: data.product_id,
+          ["plan.name"]: subscriptionPlans[data.product_id].id,
           ["plan.startedAt"]: new Date(),
         });
-    } else if (data.type == "EXPIRATION") {
-      return console.log(
-        `User: ${data.app_user_id} expiration subscription to ${
-          data.product_id
-        } from ${data.store} at ${new Date().toISOString()}`
-      );
+
+      if (userData.notificationToken) {
+        const message = {
+          to: userData.notificationToken,
+          sound: "default",
+          title: "Subscription Renewal",
+          body: `Your ${
+            subscriptionPlans[data.product_id].name
+          } subscription is renewed!`,
+          data: { someData: "", path: "notificationscreen" },
+        };
+
+        await helper.sendNotificaion(message);
+      }
+
+      return;
     } else {
       return console.log(
         `User: ${data.app_user_id} ${data.type} to ${data.product_id} from ${
